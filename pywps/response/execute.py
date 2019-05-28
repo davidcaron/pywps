@@ -5,6 +5,8 @@
 
 import logging
 import os
+import shutil
+import tempfile
 from lxml import etree
 import time
 from werkzeug.wrappers import Request
@@ -93,11 +95,22 @@ class ExecuteResponse(WPSResponse):
     def _update_status_file(self):
         # TODO: check if file/directory is still present, maybe deleted in mean time
         try:
-            # update the status xml file
-            with open(self.process.status_location, 'w') as f:
-                f.write(self.doc)
-                f.flush()
-                os.fsync(f.fileno())
+            status_document = self.doc
+
+            # write the status xml file to a temporary file
+            temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf8", delete=False)
+            temp.write(status_document)
+            temp.flush()
+            os.fsync(temp.fileno())
+            temp.close()
+
+            try:
+                # this operation will be atomic if successful
+                os.rename(temp.name, self.process.status_location)
+            except OSError:
+                shutil.copy(temp.name, self.process.status_location)
+                os.remove(temp.name)
+
         except Exception as e:
             raise NoApplicableCode('Writing Response Document failed with : {}'.format(e))
 
